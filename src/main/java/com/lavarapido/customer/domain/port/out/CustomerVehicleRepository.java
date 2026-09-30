@@ -18,4 +18,7 @@ public interface CustomerVehicleRepository {
      * "la placa es de este mismo vehiculo" (se deja pasar) de "es de otro" (choca).
      */
     Optional<Long> findActiveVehicleIdByPlate(LicensePlate plate);
+
+    /** customer_id del dueño de un vehiculo activo; vacio si no existe o esta borrado. */
+    Optional<Long> findCustomerIdOfActiveVehicle(long vehicleId);
 }

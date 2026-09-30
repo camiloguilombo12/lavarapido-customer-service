@@ -44,6 +44,13 @@ class CustomerVehiclePersistenceAdapter implements CustomerVehicleRepository {
                 .map(CustomerVehicleJpaEntity::getId);
     }
 
+    @Override
+    public Optional<Long> findCustomerIdOfActiveVehicle(long vehicleId) {
+        return repository.findById(vehicleId)
+                .filter(vehicle -> vehicle.getDeletedAt() == null)
+                .map(CustomerVehicleJpaEntity::getCustomerId);
+    }
+
     /**
      * Inserta un vehiculo nuevo. Como la columna es IDENTITY el id solo existe despues del INSERT,
      * asi que se le asigna al objeto del dominio para que el caso de uso pueda devolverlo.

@@ -25,7 +25,7 @@ import java.util.Objects;
  */
 public class CustomerAccount {
 
-    private final long customerId;
+    private long customerId;
     private final long personId;
     private final Long userId;
     private int loyaltyPoints;
@@ -63,6 +63,21 @@ public class CustomerAccount {
             throw new InvalidValueException("INVALID_POINTS", "Loyalty points cannot be negative");
         }
         return new CustomerAccount(customerId, personId, userId, loyaltyPoints, customerSince, createdAt, vehicles);
+    }
+
+    /**
+     * La base asigna el id al insertar la cuenta (IDENTITY). Se pasa aqui para que los vehiculos
+     * que se registren despues, y el evento CustomerProvisioned, lleven el id real y no 0.
+     */
+    public void assignId(long newCustomerId) {
+        if (customerId != 0L) {
+            throw new IllegalStateException("The customer already has an id");
+        }
+        this.customerId = newCustomerId;
+        pendingEvents.replaceAll(event -> event instanceof CustomerProvisioned provisioned
+                ? new CustomerProvisioned(newCustomerId, provisioned.personId(), provisioned.userId(),
+                        provisioned.occurredAt())
+                : event);
     }
 
     /** Registra un vehiculo nuevo. El formato de la placa ya lo reviso quien llama. */

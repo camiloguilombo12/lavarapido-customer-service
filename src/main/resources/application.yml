@@ -28,6 +28,21 @@ spring:
           preferred_instant_jdbc_type: TIMESTAMP
         use_nationalized_character_data: true
 
+  # RabbitMQ (ADR-004): solo se conecta con MESSAGING_ENABLED=true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        auto-startup: ${MESSAGING_ENABLED:false}
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
+
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
     # Cada servicio tiene su propia tabla de changelog, porque los seis migran la misma base.
@@ -53,6 +68,20 @@ security:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  messaging:
+    # false: el perfil del cliente se crea la primera vez que entra (consultando security-service)
+    enabled: ${MESSAGING_ENABLED:false}
+  security-service:
+    # de aqui se lee el person_id cuando el evento de registro no llego
+    base-url: ${SECURITY_SERVICE_URL:http://localhost:3001/api/v1}
+    timeout: ${SECURITY_SERVICE_TIMEOUT:3s}
+
+# Swagger apagado por defecto; application-dev.yml lo prende
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 management:
   endpoints:
@@ -63,6 +92,9 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    rabbit:
+      enabled: ${MESSAGING_ENABLED:false}
   info:
     env:
       enabled: true

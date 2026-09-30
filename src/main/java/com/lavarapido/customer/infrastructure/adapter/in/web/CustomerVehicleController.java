@@ -1,5 +1,6 @@
 package com.lavarapido.customer.infrastructure.adapter.in.web;
 
+import com.lavarapido.customer.domain.port.in.GetCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.in.ListCustomerVehiclesUseCase;
 import com.lavarapido.customer.domain.port.in.RegisterCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.in.RemoveCustomerVehicleUseCase;
@@ -40,15 +41,18 @@ class CustomerVehicleController {
     private final RegisterCustomerVehicleUseCase registerVehicle;
     private final UpdateCustomerVehicleUseCase updateVehicle;
     private final RemoveCustomerVehicleUseCase removeVehicle;
+    private final GetCustomerVehicleUseCase getVehicle;
 
     CustomerVehicleController(ListCustomerVehiclesUseCase listVehicles,
                               RegisterCustomerVehicleUseCase registerVehicle,
                               UpdateCustomerVehicleUseCase updateVehicle,
-                              RemoveCustomerVehicleUseCase removeVehicle) {
+                              RemoveCustomerVehicleUseCase removeVehicle,
+                              GetCustomerVehicleUseCase getVehicle) {
         this.listVehicles = listVehicles;
         this.registerVehicle = registerVehicle;
         this.updateVehicle = updateVehicle;
         this.removeVehicle = removeVehicle;
+        this.getVehicle = getVehicle;
     }
 
     @GetMapping
@@ -57,6 +61,13 @@ class CustomerVehicleController {
         return listVehicles.execute(userId).stream()
                 .map(VehicleResponse::from)
                 .toList();
+    }
+
+    /** Un vehiculo del que llama. booking-service lo usa (con el mismo token) para validar la propiedad. */
+    @GetMapping("/{id}")
+    VehicleResponse get(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
+        long userId = AuthenticatedUser.from(jwt).userId();
+        return VehicleResponse.from(getVehicle.get(userId, id));
     }
 
     @PostMapping
