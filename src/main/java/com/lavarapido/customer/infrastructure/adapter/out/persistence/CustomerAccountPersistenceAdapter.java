@@ -52,12 +52,22 @@ class CustomerAccountPersistenceAdapter implements CustomerAccountRepository {
      */
     @Override
     public CustomerAccount save(CustomerAccount account) {
-        CustomerJpaEntity entity = new CustomerJpaEntity(
-                account.personId(),
-                account.userId(),
-                account.customerSince(),
-                account.createdAt());
-        accounts.save(entity);
+        if (account.customerId() == 0L) {
+            // Cuenta nueva (llega del evento de registro): se inserta la fila.
+            CustomerJpaEntity created = new CustomerJpaEntity(
+                    account.personId(),
+                    account.userId(),
+                    account.customerSince(),
+                    account.createdAt());
+            created.setLoyaltyPoints(account.loyaltyPoints());
+            accounts.save(created);
+        } else {
+            // Cuenta que ya existe: se actualiza la fila, no se duplica. Lo unico que puede cambiar
+            // aqui es el saldo de puntos; lo demas (person_id, user_id, fechas) es de solo lectura.
+            CustomerJpaEntity existing = accounts.findById(account.customerId()).orElseThrow();
+            existing.setLoyaltyPoints(account.loyaltyPoints());
+            accounts.save(existing);
+        }
 
         for (CustomerVehicle vehicle : account.allVehicles()) {
             if (vehicle.isDeleted()) {
