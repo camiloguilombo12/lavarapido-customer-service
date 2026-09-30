@@ -7,5 +7,5 @@
 
 --changeset lavarapido:customer-015-add-model
 --preconditions onFail:MARK_RAN
---precondition-column-exists table:[customer].customer_vehicle column:model
+--precondition-sql-check expectedResult:0 SELECT COUNT(*) FROM sys.columns c JOIN sys.tables t ON c.object_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE s.name = 'customer' AND t.name = 'customer_vehicle' AND c.name = 'model'
 ALTER TABLE [customer].customer_vehicle ADD model NVARCHAR(50) NULL;
