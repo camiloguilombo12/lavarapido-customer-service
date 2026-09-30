@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Changelog del customer-service: solo el esquema `customer` (ADR-009).
+  Los archivos corren en el orden de esta lista, no alfabéticamente (06-data/migration-strategy.md).
+  Cada changeset tiene una precondición, así se marca como ejecutado en vez de fallar cuando el
+  script completo lavarapido-6-services-sqlserver.sql ya creó el objeto.
+
+  Numeración global del proyecto (migration-strategy.md), no reiniciada por servicio:
+    004  esquema y tablas del customer-service
+    014  user_id en customer (referencia al app_user del token, decisión de arquitectura)
+    015  model en customer_vehicle (el formulario del frontend lo pedía)
+    102  seed de tipos de vehículo
+-->
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <include file="db/changelog/004-create-customer-schema.sql"/>
+    <include file="db/changelog/014-add-customer-user-id.sql"/>
+    <include file="db/changelog/015-add-customer-vehicle-model.sql"/>
+    <include file="db/changelog/seed/102-seed-customer-catalogs.sql"/>
+
+</databaseChangeLog>
