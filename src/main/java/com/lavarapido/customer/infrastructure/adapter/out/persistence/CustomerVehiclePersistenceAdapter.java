@@ -4,6 +4,7 @@ import com.lavarapido.customer.domain.model.CustomerVehicle;
 import com.lavarapido.customer.domain.model.LicensePlate;
 import com.lavarapido.customer.domain.model.VehicleText;
 import com.lavarapido.customer.domain.model.VehicleType;
+import com.lavarapido.customer.domain.port.out.CustomerVehicleRepository;
 import com.lavarapido.customer.infrastructure.adapter.out.persistence.entity.CustomerVehicleJpaEntity;
 import com.lavarapido.customer.infrastructure.adapter.out.persistence.repository.CustomerVehicleJpaRepository;
 import org.springframework.stereotype.Repository;
@@ -20,7 +21,7 @@ import java.util.Optional;
  * duplicar el mapeo en los dos lados.
  */
 @Repository
-class CustomerVehiclePersistenceAdapter {
+class CustomerVehiclePersistenceAdapter implements CustomerVehicleRepository {
 
     private final CustomerVehicleJpaRepository repository;
     private final VehicleTypePersistenceAdapter catalog;
@@ -37,7 +38,8 @@ class CustomerVehiclePersistenceAdapter {
                 .toList();
     }
 
-    Optional<Long> findActiveVehicleIdByPlate(LicensePlate plate) {
+    @Override
+    public Optional<Long> findActiveVehicleIdByPlate(LicensePlate plate) {
         return repository.findActiveByLicensePlate(plate.value())
                 .map(CustomerVehicleJpaEntity::getId);
     }
