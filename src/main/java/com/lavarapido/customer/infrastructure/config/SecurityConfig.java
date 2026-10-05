@@ -59,6 +59,8 @@ class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_ENDPOINTS).permitAll()
                         .requestMatchers(SWAGGER_ENDPOINTS).permitAll()
+                        // TEMPORAL hasta operations-service: booking pide las placas con el token del operario
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/vehicles").hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().permitAll())

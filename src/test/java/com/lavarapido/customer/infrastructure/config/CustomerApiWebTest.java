@@ -149,4 +149,14 @@ class CustomerApiWebTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MISSING_FILTER"));
     }
+
+    @Test
+    void operatorCanOnlyReadTheVehicleLookup() throws Exception {
+        given(lookupVehicles.byIds(List.of(5L))).willReturn(List.of(new OwnedVehicleView(CAR, 7L)));
+        mvc.perform(get("/api/v1/admin/vehicles").param("ids", "5")
+                        .header("Authorization", token(30L, List.of("OPERATOR"))))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/admin/vehicle-types").header("Authorization", token(30L, List.of("OPERATOR"))))
+                .andExpect(status().isForbidden());
+    }
 }
