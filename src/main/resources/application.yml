@@ -67,7 +67,7 @@ security:
 
 app:
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost:8081}
   messaging:
     # false: el perfil del cliente se crea la primera vez que entra (consultando security-service)
     enabled: ${MESSAGING_ENABLED:false}
