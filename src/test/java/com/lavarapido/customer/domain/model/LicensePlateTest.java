@@ -26,12 +26,13 @@ class LicensePlateTest {
             assertEquals("ABC123", LicensePlate.of(input).value());
         }
 
-        @Test
-        @DisplayName("lo que sobra se corta en vez de fallar")
-        void truncatesInsteadOfThrowing() {
-            // Se corta aca y el detalle se pierde despues, en la politica de formato. Una placa
-            // demasiado larga se rechaza igual, pero con un mensaje que si dice que paso.
-            assertEquals("ABC123", LicensePlate.of("ABC1234").value());
+        @ParameterizedTest
+        @ValueSource(strings = {"ABC1234", "abc-1234", "ABCD123"})
+        @DisplayName("E-16: una placa de mas de 6 letras y numeros se rechaza, no se corta")
+        void rejectsMoreThanSixCharacters(String input) {
+            // antes "ABC1234" quedaba "ABC123": se guardaba la placa de otro vehiculo sin avisar
+            InvalidValueException error = assertThrows(InvalidValueException.class, () -> LicensePlate.of(input));
+            assertEquals("INVALID_PLATE", error.code());
         }
     }
 
