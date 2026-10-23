@@ -17,16 +17,18 @@ import java.util.Objects;
  */
 public record LicensePlate(String value) {
 
-    private static final int MAX_LENGTH = 10;
-    private static final int CANONICAL_LENGTH = 6;
+    // carro ABC123 y moto ABC12D: 6 letras y numeros (E-16)
+    private static final int MAX_LENGTH = 6;
 
     public LicensePlate {
         value = normalize(value);
         if (value.isEmpty()) {
             throw new InvalidValueException("INVALID_PLATE", "License plate is required");
         }
+        // E-16: se rechaza en vez de cortarla; cortada podia quedar la placa de otro vehiculo
         if (value.length() > MAX_LENGTH) {
-            throw new InvalidValueException("INVALID_PLATE", "License plate is too long");
+            throw new InvalidValueException("INVALID_PLATE",
+                    "A license plate has at most " + MAX_LENGTH + " letters and digits");
         }
     }
 
@@ -39,8 +41,7 @@ public record LicensePlate(String value) {
         if (raw == null) {
             return "";
         }
-        String cleaned = raw.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
-        return cleaned.length() > CANONICAL_LENGTH ? cleaned.substring(0, CANONICAL_LENGTH) : cleaned;
+        return raw.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
     }
 
     /** Como se ve en pantalla: "ABC123" queda "ABC-123". */

@@ -49,7 +49,9 @@ camioneta o camión es `ABC123` (3 letras, 3 números); moto es `ABC12D` (3 letr
 
 **Normalización.** La placa se guarda siempre en mayúsculas y sin separadores, aunque el usuario
 escriba `abc-123`. Eso es lo que hace que `ux_customer_vehicle_plate_active` sirva de algo: sin
-normalizar, la misma placa escrita de dos formas sería única dos veces.
+normalizar, la misma placa escrita de dos formas sería única dos veces. Una placa con más de 6
+letras y números se rechaza con `INVALID_PLATE` (antes se cortaba y podía quedar la placa de otro
+vehículo, E-16).
 
 **Unicidad de la placa.** Es entre **todos** los clientes, no dentro de una cuenta. La comprueba el
 dominio antes de escribir y la garantiza el índice único filtrado de la base. El borrado lógico es
