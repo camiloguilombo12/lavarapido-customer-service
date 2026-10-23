@@ -60,7 +60,7 @@ class CustomerAccountPersistenceAdapter implements CustomerAccountRepository {
                     account.customerSince(),
                     account.createdAt());
             created.setLoyaltyPoints(account.loyaltyPoints());
-            accounts.save(created);
+            account.assignId(accounts.save(created).getId());
         } else {
             // Cuenta que ya existe: se actualiza la fila, no se duplica. Lo unico que puede cambiar
             // aqui es el saldo de puntos; lo demas (person_id, user_id, fechas) es de solo lectura.

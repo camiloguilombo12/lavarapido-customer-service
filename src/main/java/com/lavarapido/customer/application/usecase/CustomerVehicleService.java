@@ -10,6 +10,7 @@ import com.lavarapido.customer.domain.model.VehicleText;
 import com.lavarapido.customer.domain.model.VehicleType;
 import com.lavarapido.customer.domain.model.VehicleTypeCode;
 import com.lavarapido.customer.domain.port.in.CustomerVehicleView;
+import com.lavarapido.customer.domain.port.in.GetCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.in.ListCustomerVehiclesUseCase;
 import com.lavarapido.customer.domain.port.in.RegisterCustomerVehicleCommand;
 import com.lavarapido.customer.domain.port.in.RegisterCustomerVehicleUseCase;
@@ -19,6 +20,7 @@ import com.lavarapido.customer.domain.port.in.UpdateCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.out.CustomerAccountRepository;
 import com.lavarapido.customer.domain.port.out.CustomerVehicleRepository;
 import com.lavarapido.customer.domain.port.out.DomainEventPublisher;
+import com.lavarapido.customer.domain.port.out.IdentityDirectory;
 import com.lavarapido.customer.domain.port.out.VehicleTypeRepository;
 import com.lavarapido.customer.domain.service.LicensePlatePolicy;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -40,13 +43,15 @@ public class CustomerVehicleService implements
         RegisterCustomerVehicleUseCase,
         UpdateCustomerVehicleUseCase,
         RemoveCustomerVehicleUseCase,
-        ListCustomerVehiclesUseCase {
+        ListCustomerVehiclesUseCase,
+        GetCustomerVehicleUseCase {
 
     private final CustomerAccountRepository accounts;
     private final CustomerVehicleRepository vehicles;
     private final VehicleTypeRepository vehicleTypes;
     private final DomainEventPublisher events;
     private final LicensePlatePolicy platePolicy;
+    private final IdentityDirectory identity;
     private final Clock clock;
 
     public CustomerVehicleService(CustomerAccountRepository accounts,
@@ -54,21 +59,28 @@ public class CustomerVehicleService implements
                                   VehicleTypeRepository vehicleTypes,
                                   DomainEventPublisher events,
                                   LicensePlatePolicy platePolicy,
+                                  IdentityDirectory identity,
                                   Clock clock) {
         this.accounts = accounts;
         this.vehicles = vehicles;
         this.vehicleTypes = vehicleTypes;
         this.events = events;
         this.platePolicy = platePolicy;
+        this.identity = identity;
         this.clock = clock;
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<CustomerVehicleView> execute(long userId) {
         return requireAccount(userId).activeVehicles().stream()
-                .map(this::toView)
+                .map(VehicleViews::of)
                 .toList();
+    }
+
+    /** Un vehiculo de SU cuenta: si es de otro cliente o no existe, 404 (VehicleNotFoundException). */
+    @Override
+    public CustomerVehicleView get(long userId, long vehicleId) {
+        return VehicleViews.of(requireAccount(userId).findActiveVehicle(vehicleId));
     }
 
     @Override
@@ -89,7 +101,7 @@ public class CustomerVehicleService implements
         accounts.save(account);
         events.publish(account.pullEvents());
 
-        return toView(registered);
+        return VehicleViews.of(registered);
     }
 
     @Override
@@ -113,7 +125,7 @@ public class CustomerVehicleService implements
         accounts.save(account);
         events.publish(account.pullEvents());
 
-        return toView(existing);
+        return VehicleViews.of(existing);
     }
 
     @Override
@@ -125,12 +137,23 @@ public class CustomerVehicleService implements
     }
 
     /**
-     * La cuenta se busca por el user_id del token. Si no esta, todavia no llego el evento de
-     * registro, asi que es 409 y no 404: la cuenta si existe, lo que falta es su perfil.
+     * La cuenta se busca por el user_id del token. Si no esta es porque el evento de registro no
+     * llego (RabbitMQ apagado, o cuentas creadas antes de conectar los eventos): se le pide el
+     * person_id al security-service y se crea el perfil en ese momento. Si ni asi se puede, 409:
+     * la cuenta si existe, lo que falta es su perfil.
      */
     private CustomerAccount requireAccount(long userId) {
-        return accounts.findByUserId(userId)
+        return accounts.findByUserId(userId).orElseGet(() -> provision(userId));
+    }
+
+    private CustomerAccount provision(long userId) {
+        long personId = identity.personIdOf(userId)
                 .orElseThrow(() -> new CustomerNotProvisionedException(userId));
+        Instant now = now();
+        CustomerAccount saved = accounts.save(CustomerAccount.provision(personId, userId,
+                LocalDate.ofInstant(now, clock.getZone()), now));
+        events.publish(saved.pullEvents());
+        return saved;
     }
 
     /**
@@ -158,20 +181,6 @@ public class CustomerVehicleService implements
                 });
     }
 
-    private CustomerVehicleView toView(CustomerVehicle vehicle) {
-        VehicleType type = vehicle.vehicleType();
-        return new CustomerVehicleView(
-                vehicle.customerVehicleId(),
-                vehicle.licensePlate().value(),
-                vehicle.licensePlate().formatted(),
-                type.code().name(),
-                type.vehicleTypeId(),
-                type.name(),
-                vehicle.brand().orNull(),
-                vehicle.model().orNull(),
-                vehicle.color().orNull(),
-                vehicle.createdAt());
-    }
 
     private Instant now() {
         return clock.instant();
