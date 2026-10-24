@@ -109,6 +109,26 @@ class CustomerApiWebTest {
     }
 
     @Test
+    void removingAVehicleWithActiveBookingsIsAConflictAndBookingDownIs503() throws Exception {
+        // BIZ-08: con reservas activas, 409; si booking no responde, 503 (no se retira a ciegas)
+        org.mockito.BDDMockito.willThrow(
+                        new com.lavarapido.customer.domain.exception.VehicleHasActiveBookingsException(5L, 2L))
+                .given(removeVehicle).execute(7L, 5L);
+        org.mockito.BDDMockito.willThrow(new com.lavarapido.customer.domain.exception.DependencyUnavailableException(
+                        "BOOKING_SERVICE_UNAVAILABLE", "booking is down"))
+                .given(removeVehicle).execute(7L, 6L);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/vehicles/5")
+                        .header("Authorization", token(7L, List.of("CLIENT"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VEHICLE_HAS_ACTIVE_BOOKINGS"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/vehicles/6")
+                        .header("Authorization", token(7L, List.of("CLIENT"))))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("BOOKING_SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
     void clientGetsOneOwnVehicleOr404() throws Exception {
         given(getVehicle.get(7L, 5L)).willReturn(CAR);
         given(getVehicle.get(7L, 6L)).willThrow(new VehicleNotFoundException(6L));

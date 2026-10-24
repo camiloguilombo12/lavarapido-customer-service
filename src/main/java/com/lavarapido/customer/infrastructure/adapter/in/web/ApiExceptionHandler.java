@@ -1,8 +1,10 @@
 package com.lavarapido.customer.infrastructure.adapter.in.web;
 
 import com.lavarapido.customer.domain.exception.CustomerNotProvisionedException;
+import com.lavarapido.customer.domain.exception.DependencyUnavailableException;
 import com.lavarapido.customer.domain.exception.DomainException;
 import com.lavarapido.customer.domain.exception.PlateAlreadyRegisteredException;
+import com.lavarapido.customer.domain.exception.VehicleHasActiveBookingsException;
 import com.lavarapido.customer.domain.exception.VehicleNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,6 +87,9 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             // 409 y no 404: la cuenta si existe, lo que falta es que llegue el evento de
             // registro. Es un reintento, no un error del cliente.
             case CustomerNotProvisionedException ignored -> HttpStatus.CONFLICT;
+            // BIZ-08: tiene reservas activas; o booking no respondio y no se retira a ciegas
+            case VehicleHasActiveBookingsException ignored -> HttpStatus.CONFLICT;
+            case DependencyUnavailableException ignored -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
