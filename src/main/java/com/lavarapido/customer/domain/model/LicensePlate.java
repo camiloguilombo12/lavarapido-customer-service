@@ -25,14 +25,25 @@ public record LicensePlate(String value) {
         if (value.isEmpty()) {
             throw new InvalidValueException("INVALID_PLATE", "License plate is required");
         }
+    }
+
+    /** La placa que alguien escribe (crear, editar, buscar). */
+    public static LicensePlate of(String raw) {
+        LicensePlate plate = new LicensePlate(raw);
         // E-16: se rechaza en vez de cortarla; cortada podia quedar la placa de otro vehiculo
-        if (value.length() > MAX_LENGTH) {
+        if (plate.value().length() > MAX_LENGTH) {
             throw new InvalidValueException("INVALID_PLATE",
                     "A license plate has at most " + MAX_LENGTH + " letters and digits");
         }
+        return plate;
     }
 
-    public static LicensePlate of(String raw) {
+    /**
+     * La placa ya guardada en la base. La columna admite 10 caracteres y antes de E-16 pudo quedar
+     * alguna mas larga que 6: leerla no puede fallar, porque romperia la lista del cliente y a
+     * booking-service, que lee el vehiculo. El limite se exige cuando alguien la vuelve a escribir.
+     */
+    public static LicensePlate stored(String raw) {
         return new LicensePlate(raw);
     }
 

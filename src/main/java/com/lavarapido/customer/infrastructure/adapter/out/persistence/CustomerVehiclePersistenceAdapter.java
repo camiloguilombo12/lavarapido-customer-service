@@ -94,7 +94,8 @@ class CustomerVehiclePersistenceAdapter implements CustomerVehicleRepository {
         return CustomerVehicle.restore(
                 entity.getId(),
                 entity.getCustomerId(),
-                LicensePlate.of(entity.getLicensePlate()),
+                // E-16: una placa vieja de mas de 6 caracteres se lee igual (la regla es al escribir)
+                LicensePlate.stored(entity.getLicensePlate()),
                 typeId == null ? null : catalog.requireById(typeId),
                 VehicleText.brand(entity.getBrand()),
                 VehicleText.model(entity.getModel()),

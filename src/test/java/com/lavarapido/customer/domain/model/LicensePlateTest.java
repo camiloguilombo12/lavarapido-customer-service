@@ -34,6 +34,18 @@ class LicensePlateTest {
             InvalidValueException error = assertThrows(InvalidValueException.class, () -> LicensePlate.of(input));
             assertEquals("INVALID_PLATE", error.code());
         }
+
+        @Test
+        @DisplayName("E-16: una placa vieja de mas de 6 caracteres guardada en la base se lee sin fallar")
+        void aStoredLongPlateIsStillReadable() {
+            // la columna admite 10 caracteres; leerla no debe romper la lista del cliente ni a booking
+            LicensePlate stored = LicensePlate.stored("ABC12345");
+
+            assertEquals("ABC12345", stored.value());
+            assertEquals("ABC-12345", stored.formatted());
+            // pero escribirla otra vez exige el limite
+            assertThrows(InvalidValueException.class, () -> LicensePlate.of(stored.value()));
+        }
     }
 
     @Nested
