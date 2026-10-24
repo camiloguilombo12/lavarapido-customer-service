@@ -148,7 +148,7 @@ solo verifica que el mapeo coincida con la base, nunca la modifica.
 ### Pruebas
 
 ```bash
-./mvnw test        # 69 pruebas (23-10-2026), sin base de datos: dominio, política, listener y API web
+./mvnw test        # 74 pruebas (24-10-2026), sin base de datos: dominio, política, listener y API web
 ```
 
 ## Variables de entorno
