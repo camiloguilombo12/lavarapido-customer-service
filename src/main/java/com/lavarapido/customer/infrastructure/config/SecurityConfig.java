@@ -62,6 +62,9 @@ class SecurityConfig {
                         // TEMPORAL hasta operations-service: booking pide las placas con el token del operario
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/vehicles").hasAnyRole("ADMIN", "OPERATOR")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // BIZ-12 / A-10: "mis vehiculos" es solo del rol CLIENT. Asi un admin o un operario
+                        // tampoco termina con un perfil de cliente creado al entrar (provision)
+                        .requestMatchers("/api/v1/vehicles", "/api/v1/vehicles/**").hasRole("CLIENT")
                         .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(oauth2 -> oauth2
