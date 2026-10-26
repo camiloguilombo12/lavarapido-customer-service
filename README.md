@@ -11,14 +11,18 @@ Perfil de cliente y sus vehículos. Es el dueño del esquema `customer` y de sus
 ## Endpoints
 
 Todos bajo `/api/v1`. Salvo el catálogo de tipos de vehículo, todos exigen un token válido
-emitido por `security-service`.
+emitido por `security-service`. Las rutas de "mis vehículos" son solo del rol `CLIENT`: un admin o
+un operario recibe `403` y no se le crea perfil de cliente (BIZ-12).
 
 | Método  | Ruta                          | Acceso  | Qué hace                                        |
 |---------|-------------------------------|---------|-------------------------------------------------|
 | `GET`   | `/api/v1/vehicles`            | Cliente | Lista los vehículos del cliente que llama        |
+| `GET`   | `/api/v1/vehicles/{id}`       | Cliente | Un vehículo propio (ajeno: `404`). booking-service lo usa con el token del cliente para validar la propiedad |
 | `POST`  | `/api/v1/vehicles`            | Cliente | Registra un vehículo                             |
 | `PUT`   | `/api/v1/vehicles/{id}`       | Cliente | Edita un vehículo propio                         |
-| `DELETE`| `/api/v1/vehicles/{id}`       | Cliente | Borra un vehículo (lógico) y responde `204`      |
+| `DELETE`| `/api/v1/vehicles/{id}`       | Cliente | Retira un vehículo (borrado lógico) y responde `204`; `409 VEHICLE_HAS_ACTIVE_BOOKINGS` si tiene reservas activas, `503 BOOKING_SERVICE_UNAVAILABLE` si booking no responde (BIZ-08) |
+| `GET`   | `/api/v1/admin/vehicles?ids=1,2,3` | Admin y operario | Vehículos de cualquier cliente con su dueño (`ownerUserId`); hasta 100 ids. booking-service lo usa en las reservas del admin y del operario |
+| `GET`   | `/api/v1/admin/vehicles?plate=ABC123` | Admin y operario | Busca un vehículo activo por placa (el admin reserva a nombre de un cliente) |
 | `GET`   | `/api/v1/vehicle-types`       | Público | Catálogo de tipos de vehículo                    |
 | `GET`   | `/actuator/health`            | Público | Sonda de salud                                   |
 
@@ -49,7 +53,10 @@ camioneta o camión es `ABC123` (3 letras, 3 números); moto es `ABC12D` (3 letr
 
 **Normalización.** La placa se guarda siempre en mayúsculas y sin separadores, aunque el usuario
 escriba `abc-123`. Eso es lo que hace que `ux_customer_vehicle_plate_active` sirva de algo: sin
-normalizar, la misma placa escrita de dos formas sería única dos veces.
+normalizar, la misma placa escrita de dos formas sería única dos veces. Una placa con más de 6
+letras y números se rechaza con `INVALID_PLATE` al crear, editar o buscar (antes se cortaba y podía
+quedar la placa de otro vehículo, E-16). Una placa más larga que ya estaba guardada (la columna
+admite 10) se sigue leyendo: el límite se exige cuando alguien la vuelve a escribir.
 
 **Unicidad de la placa.** Es entre **todos** los clientes, no dentro de una cuenta. La comprueba el
 dominio antes de escribir y la garantiza el índice único filtrado de la base. El borrado lógico es
@@ -57,6 +64,12 @@ lo que permite volver a registrar la misma placa después.
 
 **Borrado lógico.** Nunca se borra una fila. Un vehículo borrado es indistinguible de uno que
 nunca existió, para todo lo que mira la API.
+
+**Retirar con reservas activas (BIZ-08).** Antes de retirar un vehículo se le pregunta a
+booking-service `GET /internal/v1/bookings/active-count?customerVehicleId={id}` con la llave
+`X-Internal-Key`. Si tiene reservas en curso, o programadas/confirmadas que no han terminado, es
+`409 VEHICLE_HAS_ACTIVE_BOOKINGS` (si no, quedarían huérfanas ocupando la bahía). Si booking no
+responde, o falta `INTERNAL_API_KEY`, es `503 BOOKING_SERVICE_UNAVAILABLE`: no se retira a ciegas.
 
 **Puntos de fidelización.** `customer.loyalty_points` es una **copia de display**: el saldo real
 es el libro mayor `payment.loyalty_transaction`. Por eso este servicio no calcula nada, solo
@@ -88,18 +101,27 @@ calcula con esa columna.
 ## Cómo se crea la fila de cliente
 
 `customer.customer` requiere `person_id`, que vive en el esquema de seguridad y que el token
-**no** lleva (el token está declarado como "sin datos personales", ADR-006). Por eso la fila no se
-crea en el primer endpoint que toca el cliente, sino al consumir el evento
-`security.user.registered`, que sí lo trae. Ese camino ya estaba previsto: el comentario del propio
-evento en el `security-service` dice que este servicio reacciona creando el perfil de cliente.
+**no** lleva (el token está declarado como "sin datos personales", ADR-006). Hay dos caminos:
 
-`ConsumeUserRegisteredUseCase` está implementado y es idempotente —los mensajeros entregan al
-menos una vez—. Cuando todavía no ha llegado el evento, los endpoints responden `409` con
-`CUSTOMER_NOT_PROVISIONED`: la cuenta sí existe, lo que falta es su perfil.
+1. **Por evento.** Con `MESSAGING_ENABLED=true`, `UserRegisteredListener` escucha
+   `security.user_registered` (cola `customer-service.events`, con su DLQ) y crea el perfil solo si
+   la cuenta tiene el rol `CLIENT`. Es idempotente: los mensajeros entregan al menos una vez.
+2. **Al primer uso.** Si el evento no llegó (RabbitMQ apagado o cuentas viejas), la primera vez que
+   el cliente toca "mis vehículos" se le pide a security-service `GET /users/me` con su mismo token
+   y se crea el perfil con ese `person_id`. Si ni así se puede, `409 CUSTOMER_NOT_PROVISIONED`: la
+   cuenta sí existe, lo que falta es su perfil.
 
-**Pendiente:** el adaptador que escucha el broker. Hoy el publicador solo escribe al log
-(`LoggingDomainEventPublisher`); cuando se conecte, se reemplaza ese adaptador y ni el dominio ni
-los casos de uso cambian.
+Los eventos que publica este servicio (`CustomerProvisioned`, `VehicleRegistered`, `VehicleUpdated`,
+`VehicleRemoved`) hoy solo van al log (`LoggingDomainEventPublisher`): nadie los consume todavía.
+
+## Llamadas a otros servicios
+
+| A quién | Ruta | Con qué | Si no responde |
+|---|---|---|---|
+| security-service | `GET {SECURITY_SERVICE_URL}/users/me` | el token del cliente | `409 CUSTOMER_NOT_PROVISIONED` |
+| booking-service | `GET {BOOKING_SERVICE_URL}/internal/v1/bookings/active-count?customerVehicleId=` | `X-Internal-Key` (`INTERNAL_API_KEY`) | `503 BOOKING_SERVICE_UNAVAILABLE`, no se retira el vehículo |
+
+Ambas con tiempo máximo de 3 s.
 
 ## Estructura
 
@@ -116,14 +138,18 @@ com.lavarapido.customer
 ├── application/usecase/           casos de uso; orquestan el dominio
 └── infrastructure/
     ├── adapter/in/web/            controladores, DTOs, ApiExceptionHandler
+    ├── adapter/in/messaging/      listener de security.user_registered
     ├── adapter/out/persistence/   entidades JPA y los adaptadores que traducen
     ├── adapter/out/messaging/     publicador de eventos
+    ├── adapter/out/identity/      cliente REST de security-service
+    ├── adapter/out/booking/       cliente REST de booking-service (reservas activas, BIZ-08)
     └── config/                    seguridad, JWT, CORS, correlation id, beans de dominio
 ```
 
 **Errores.** Todo sale como `application/problem+json` (RFC 9457) con un `code` estable que el
 frontend traduce. `INVALID_PLATE`, `PLATE_ALREADY_REGISTERED`, `VEHICLE_NOT_FOUND`,
-`CUSTOMER_NOT_PROVISIONED`, `INVALID_VEHICLE_TYPE`, `VALIDATION_ERROR`.
+`CUSTOMER_NOT_PROVISIONED`, `INVALID_VEHICLE_TYPE`, `VEHICLE_HAS_ACTIVE_BOOKINGS`,
+`BOOKING_SERVICE_UNAVAILABLE`, `VALIDATION_ERROR`, `CONFLICT`, `UNAUTHORIZED`, `FORBIDDEN`.
 
 ## Correrlo
 
@@ -146,7 +172,7 @@ solo verifica que el mapeo coincida con la base, nunca la modifica.
 ### Pruebas
 
 ```bash
-./mvnw test        # 51 pruebas, sin base de datos: son de dominio y de política
+./mvnw test        # 82 pruebas (24-10-2026), sin base de datos: dominio, política, listener, clientes REST y API web
 ```
 
 ## Variables de entorno
@@ -158,8 +184,15 @@ solo verifica que el mapeo coincida con la base, nunca la modifica.
 | `JWT_SECRET`          | Llave HS256 compartida, mínimo 32 bytes (ADR-006)     |
 | `JWT_ISSUER`          | `lavarapido-security-service`                         |
 | `JWT_AUDIENCE`        | `lavarapido-api`                                      |
-| `CORS_ALLOWED_ORIGINS`| `http://localhost:4200`                               |
+| `CORS_ALLOWED_ORIGINS`| `http://localhost:4200,http://localhost:8081`         |
 | `PORT`                | `3002`                                                |
+| `MESSAGING_ENABLED`   | `true` escucha `security.user_registered` en RabbitMQ (por defecto `false`) |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` | Conexión a RabbitMQ |
+| `SECURITY_SERVICE_URL`| Base de security-service con `/api/v1` (por defecto `http://localhost:3001/api/v1`) |
+| `SECURITY_SERVICE_TIMEOUT` | Tiempo máximo de esa llamada (`3s`)              |
+| `BOOKING_SERVICE_URL` | **Raíz** de booking-service, sin ruta (por defecto `http://localhost:3003`; en docker `http://booking-service:3003`). Propiedad `app.booking-service.base-url` |
+| `BOOKING_SERVICE_TIMEOUT` | Tiempo máximo de esa llamada (`3s`)               |
+| `INTERNAL_API_KEY`    | Llave `X-Internal-Key` para `/internal/**` de booking (la misma de los demás servicios). Vacía: retirar un vehículo responde `503`. Propiedad `app.internal.api-key` |
 
 Este servicio **no emite tokens**; solo los verifica. No tiene codificador de contraseñas.
 
@@ -175,6 +208,7 @@ Análisis y Desarrollo de Software (ADSO), ficha 3145556, SENA Regional Huila.
 | Manual de instalación | [09_MANUALES/ES/MD/manual-de-instalacion.md](https://github.com/BrayanCABRERA123/lavarapido-docs/blob/main/09_MANUALES/ES/MD/manual-de-instalacion.md) |
 | Levantar todo el sistema | [lavarapido-infra](https://github.com/BrayanCABRERA123/lavarapido-infra) (`docker compose --profile app up -d`) |
 | Aplicación desplegada | https://lavarapidovehicular.northcentralus.cloudapp.azure.com |
+| Despliegue continuo (CD) | [docs/despliegue-continuo.md](docs/despliegue-continuo.md) |
 
 **Ramas y commits:** se trabaja en `develop` con ramas `feature/`, `fix/` y `docs/` que se
 fusionan con `git merge --no-ff`; los commits siguen Conventional Commits

@@ -2,6 +2,8 @@ package com.lavarapido.customer.application.usecase;
 
 import com.lavarapido.customer.domain.event.CustomerProvisioned;
 import com.lavarapido.customer.domain.exception.CustomerNotProvisionedException;
+import com.lavarapido.customer.domain.exception.DependencyUnavailableException;
+import com.lavarapido.customer.domain.exception.VehicleHasActiveBookingsException;
 import com.lavarapido.customer.domain.exception.VehicleNotFoundException;
 import com.lavarapido.customer.domain.model.CustomerAccount;
 import com.lavarapido.customer.domain.model.CustomerVehicle;
@@ -11,6 +13,7 @@ import com.lavarapido.customer.domain.model.VehicleType;
 import com.lavarapido.customer.domain.model.VehicleTypeCode;
 import com.lavarapido.customer.domain.port.in.CustomerVehicleView;
 import com.lavarapido.customer.domain.port.in.OwnedVehicleView;
+import com.lavarapido.customer.domain.port.out.BookingDirectory;
 import com.lavarapido.customer.domain.port.out.CustomerAccountRepository;
 import com.lavarapido.customer.domain.port.out.CustomerVehicleRepository;
 import com.lavarapido.customer.domain.port.out.DomainEventPublisher;
@@ -52,6 +55,7 @@ class CustomerVehicleServiceTest {
     private final VehicleTypeRepository types = mock(VehicleTypeRepository.class);
     private final DomainEventPublisher events = mock(DomainEventPublisher.class);
     private final IdentityDirectory identity = mock(IdentityDirectory.class);
+    private final BookingDirectory bookings = mock(BookingDirectory.class);
 
     private CustomerVehicleService service;
     private VehicleLookupService lookup;
@@ -59,7 +63,8 @@ class CustomerVehicleServiceTest {
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new CustomerVehicleService(accounts, vehicles, types, events, new LicensePlatePolicy(), identity, clock);
+        service = new CustomerVehicleService(accounts, vehicles, types, events, new LicensePlatePolicy(), identity,
+                bookings, clock);
         lookup = new VehicleLookupService(accounts, vehicles);
     }
 
@@ -120,6 +125,34 @@ class CustomerVehicleServiceTest {
     }
 
     @Test
+    @DisplayName("BIZ-08: con reservas activas es 409 VEHICLE_HAS_ACTIVE_BOOKINGS y no se retira")
+    void keepsAVehicleWithActiveBookings() {
+        CustomerAccount account = accountWithCar(1L, 7L, 5L);
+        given(accounts.findByUserId(7L)).willReturn(Optional.of(account));
+        given(bookings.activeBookingsOf(5L)).willReturn(2L);
+
+        VehicleHasActiveBookingsException error = assertThrows(VehicleHasActiveBookingsException.class,
+                () -> service.execute(7L, 5L));
+
+        assertEquals("VEHICLE_HAS_ACTIVE_BOOKINGS", error.code());
+        assertEquals(1, account.activeVehicles().size());
+        verify(accounts, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("BIZ-08: si booking no responde no se retira a ciegas; un vehiculo ajeno es 404 sin preguntar")
+    void doesNotRemoveBlindlyNorAskForForeignVehicles() {
+        given(accounts.findByUserId(7L)).willReturn(Optional.of(accountWithCar(1L, 7L, 5L)));
+        given(bookings.activeBookingsOf(5L)).willThrow(
+                new DependencyUnavailableException("BOOKING_SERVICE_UNAVAILABLE", "booking is down"));
+
+        assertThrows(DependencyUnavailableException.class, () -> service.execute(7L, 5L));
+        assertThrows(VehicleNotFoundException.class, () -> service.execute(7L, 6L));
+        verify(bookings, never()).activeBookingsOf(6L);
+        verify(accounts, never()).save(any());
+    }
+
+    @Test
     @DisplayName("el admin encuentra un vehiculo por placa junto con su dueño")
     void lookupByPlate() {
         given(vehicles.findActiveVehicleIdByPlate(LicensePlate.of("abc-123"))).willReturn(Optional.of(5L));
@@ -143,5 +176,49 @@ class CustomerVehicleServiceTest {
 
         assertEquals(1, found.size());
         assertEquals(5L, found.getFirst().vehicle().id());
+    }
+
+    // ------------------------------------------------------------------ F-05: placa duplicada
+
+    @Test
+    @DisplayName("F-05: registrar una placa que ya tiene otro vehiculo activo es 409 y no guarda nada")
+    void registeringATakenPlateIsRejected() {
+        given(accounts.findByUserId(7L)).willReturn(Optional.of(accountWithCar(1L, 7L, 10L)));
+        given(types.findByCode(VehicleTypeCode.CAR)).willReturn(Optional.of(CAR));
+        given(vehicles.findActiveVehicleIdByPlate(LicensePlate.of("XYZ987"))).willReturn(Optional.of(99L));
+
+        assertThrows(com.lavarapido.customer.domain.exception.PlateAlreadyRegisteredException.class,
+                () -> service.execute(7L, new com.lavarapido.customer.domain.port.in.RegisterCustomerVehicleCommand(
+                        "xyz-987", "CAR", "Kia", "Picanto", "Gris")));
+        verify(accounts, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("F-05: editar sin cambiar la placa no choca consigo mismo; cambiarla a una ajena es 409")
+    void editingKeepsItsOwnPlateButNotAnotherOne() {
+        given(accounts.findByUserId(7L)).willReturn(Optional.of(accountWithCar(1L, 7L, 10L)));
+        given(types.findByCode(VehicleTypeCode.CAR)).willReturn(Optional.of(CAR));
+        given(vehicles.findActiveVehicleIdByPlate(LicensePlate.of("ABC123"))).willReturn(Optional.of(10L));
+        given(vehicles.findActiveVehicleIdByPlate(LicensePlate.of("XYZ987"))).willReturn(Optional.of(99L));
+
+        service.execute(7L, 10L, new com.lavarapido.customer.domain.port.in.UpdateCustomerVehicleCommand(
+                "ABC-123", "CAR", "Mazda", "CX-5", "Azul"));
+        verify(accounts).save(any());
+
+        assertThrows(com.lavarapido.customer.domain.exception.PlateAlreadyRegisteredException.class,
+                () -> service.execute(7L, 10L, new com.lavarapido.customer.domain.port.in.UpdateCustomerVehicleCommand(
+                        "XYZ987", "CAR", "Mazda", "CX-5", "Azul")));
+    }
+
+    @Test
+    @DisplayName("F-05: borrar un vehiculo propio lo saca de la cuenta; uno ajeno es 404")
+    void removingOnlyOwnVehicles() {
+        given(accounts.findByUserId(7L)).willReturn(Optional.of(accountWithCar(1L, 7L, 10L)));
+
+        service.execute(7L, 10L);
+        verify(accounts).save(any());
+
+        assertThrows(com.lavarapido.customer.domain.exception.VehicleNotFoundException.class,
+                () -> service.execute(7L, 55L));
     }
 }

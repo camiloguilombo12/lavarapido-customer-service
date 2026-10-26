@@ -86,6 +86,22 @@ class CustomerApiWebTest {
     }
 
     @Test
+    void ownVehiclesAreOnlyForClients() throws Exception {
+        // BIZ-12 / A-10: un admin o un operario no entra a "mis vehiculos", y por eso no se le crea perfil
+        mvc.perform(get("/api/v1/vehicles").header("Authorization", token(1L, List.of("ADMIN"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mvc.perform(get("/api/v1/vehicles/5").header("Authorization", token(30L, List.of("OPERATOR"))))
+                .andExpect(status().isForbidden());
+        org.mockito.Mockito.verifyNoInteractions(listVehicles, getVehicle);
+        // el operario sigue leyendo placas por /admin/vehicles (booking lo llama con su token)
+        given(lookupVehicles.byIds(List.of(5L))).willReturn(List.of());
+        mvc.perform(get("/api/v1/admin/vehicles").param("ids", "5")
+                        .header("Authorization", token(30L, List.of("OPERATOR"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void vehicleTypesArePublic() throws Exception {
         given(listVehicleTypes.execute()).willReturn(List.of());
         mvc.perform(get("/api/v1/vehicle-types"))
@@ -106,6 +122,26 @@ class CustomerApiWebTest {
         mvc.perform(get("/api/v1/vehicles").header("Authorization", token(7L, List.of("CLIENT"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CUSTOMER_NOT_PROVISIONED"));
+    }
+
+    @Test
+    void removingAVehicleWithActiveBookingsIsAConflictAndBookingDownIs503() throws Exception {
+        // BIZ-08: con reservas activas, 409; si booking no responde, 503 (no se retira a ciegas)
+        org.mockito.BDDMockito.willThrow(
+                        new com.lavarapido.customer.domain.exception.VehicleHasActiveBookingsException(5L, 2L))
+                .given(removeVehicle).execute(7L, 5L);
+        org.mockito.BDDMockito.willThrow(new com.lavarapido.customer.domain.exception.DependencyUnavailableException(
+                        "BOOKING_SERVICE_UNAVAILABLE", "booking is down"))
+                .given(removeVehicle).execute(7L, 6L);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/vehicles/5")
+                        .header("Authorization", token(7L, List.of("CLIENT"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VEHICLE_HAS_ACTIVE_BOOKINGS"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/vehicles/6")
+                        .header("Authorization", token(7L, List.of("CLIENT"))))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("BOOKING_SERVICE_UNAVAILABLE"));
     }
 
     @Test

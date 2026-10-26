@@ -26,12 +26,25 @@ class LicensePlateTest {
             assertEquals("ABC123", LicensePlate.of(input).value());
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"ABC1234", "abc-1234", "ABCD123"})
+        @DisplayName("E-16: una placa de mas de 6 letras y numeros se rechaza, no se corta")
+        void rejectsMoreThanSixCharacters(String input) {
+            // antes "ABC1234" quedaba "ABC123": se guardaba la placa de otro vehiculo sin avisar
+            InvalidValueException error = assertThrows(InvalidValueException.class, () -> LicensePlate.of(input));
+            assertEquals("INVALID_PLATE", error.code());
+        }
+
         @Test
-        @DisplayName("lo que sobra se corta en vez de fallar")
-        void truncatesInsteadOfThrowing() {
-            // Se corta aca y el detalle se pierde despues, en la politica de formato. Una placa
-            // demasiado larga se rechaza igual, pero con un mensaje que si dice que paso.
-            assertEquals("ABC123", LicensePlate.of("ABC1234").value());
+        @DisplayName("E-16: una placa vieja de mas de 6 caracteres guardada en la base se lee sin fallar")
+        void aStoredLongPlateIsStillReadable() {
+            // la columna admite 10 caracteres; leerla no debe romper la lista del cliente ni a booking
+            LicensePlate stored = LicensePlate.stored("ABC12345");
+
+            assertEquals("ABC12345", stored.value());
+            assertEquals("ABC-12345", stored.formatted());
+            // pero escribirla otra vez exige el limite
+            assertThrows(InvalidValueException.class, () -> LicensePlate.of(stored.value()));
         }
     }
 

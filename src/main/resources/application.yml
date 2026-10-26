@@ -77,6 +77,17 @@ app:
     # de aqui se lee el person_id cuando el evento de registro no llego
     base-url: ${SECURITY_SERVICE_URL:http://localhost:3001/api/v1}
     timeout: ${SECURITY_SERVICE_TIMEOUT:3s}
+  booking-service:
+    # BIZ-08: antes de retirar un vehiculo se le pregunta a booking si tiene reservas activas
+    # (GET /internal/v1/bookings/active-count). Es la raiz de booking, sin ruta; en docker,
+    # http://booking-service:3003
+    base-url: ${BOOKING_SERVICE_URL:http://localhost:3003}
+    timeout: ${BOOKING_SERVICE_TIMEOUT:3s}
+  # llave compartida X-Internal-Key para las rutas /internal/** de booking (la misma INTERNAL_API_KEY
+  # de los demas servicios). Vacia: retirar un vehiculo responde 503, porque no se pueden revisar
+  # sus reservas
+  internal:
+    api-key: ${INTERNAL_API_KEY:}
 
 # Swagger apagado por defecto; application-dev.yml lo prende
 springdoc:

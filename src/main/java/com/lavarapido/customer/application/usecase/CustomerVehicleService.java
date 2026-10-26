@@ -3,6 +3,7 @@ package com.lavarapido.customer.application.usecase;
 import com.lavarapido.customer.domain.exception.CustomerNotProvisionedException;
 import com.lavarapido.customer.domain.exception.InvalidValueException;
 import com.lavarapido.customer.domain.exception.PlateAlreadyRegisteredException;
+import com.lavarapido.customer.domain.exception.VehicleHasActiveBookingsException;
 import com.lavarapido.customer.domain.model.CustomerAccount;
 import com.lavarapido.customer.domain.model.CustomerVehicle;
 import com.lavarapido.customer.domain.model.LicensePlate;
@@ -17,6 +18,7 @@ import com.lavarapido.customer.domain.port.in.RegisterCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.in.RemoveCustomerVehicleUseCase;
 import com.lavarapido.customer.domain.port.in.UpdateCustomerVehicleCommand;
 import com.lavarapido.customer.domain.port.in.UpdateCustomerVehicleUseCase;
+import com.lavarapido.customer.domain.port.out.BookingDirectory;
 import com.lavarapido.customer.domain.port.out.CustomerAccountRepository;
 import com.lavarapido.customer.domain.port.out.CustomerVehicleRepository;
 import com.lavarapido.customer.domain.port.out.DomainEventPublisher;
@@ -52,6 +54,7 @@ public class CustomerVehicleService implements
     private final DomainEventPublisher events;
     private final LicensePlatePolicy platePolicy;
     private final IdentityDirectory identity;
+    private final BookingDirectory bookings;
     private final Clock clock;
 
     public CustomerVehicleService(CustomerAccountRepository accounts,
@@ -60,6 +63,7 @@ public class CustomerVehicleService implements
                                   DomainEventPublisher events,
                                   LicensePlatePolicy platePolicy,
                                   IdentityDirectory identity,
+                                  BookingDirectory bookings,
                                   Clock clock) {
         this.accounts = accounts;
         this.vehicles = vehicles;
@@ -67,6 +71,7 @@ public class CustomerVehicleService implements
         this.events = events;
         this.platePolicy = platePolicy;
         this.identity = identity;
+        this.bookings = bookings;
         this.clock = clock;
     }
 
@@ -131,6 +136,13 @@ public class CustomerVehicleService implements
     @Override
     public void execute(long userId, long vehicleId) {
         CustomerAccount account = requireAccount(userId);
+        // 404 si no es suyo, antes de preguntarle nada a booking
+        account.findActiveVehicle(vehicleId);
+        // BIZ-08: con reservas activas no se retira (quedarian huerfanas); si booking no responde, 503
+        long active = bookings.activeBookingsOf(vehicleId);
+        if (active > 0) {
+            throw new VehicleHasActiveBookingsException(vehicleId, active);
+        }
         account.removeVehicle(vehicleId, now());
         accounts.save(account);
         events.publish(account.pullEvents());
