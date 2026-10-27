@@ -168,14 +168,35 @@ class CustomerVehicleServiceTest {
     @Test
     @DisplayName("por ids ignora los que no existen o estan borrados")
     void lookupByIdsSkipsMissing() {
-        given(vehicles.findCustomerIdOfActiveVehicle(5L)).willReturn(Optional.of(1L));
-        given(vehicles.findCustomerIdOfActiveVehicle(8L)).willReturn(Optional.empty());
+        given(vehicles.findCustomerIdsOfActiveVehicles(any())).willReturn(java.util.Map.of(5L, 1L));
         given(accounts.findById(1L)).willReturn(Optional.of(accountWithCar(1L, 7L, 5L)));
 
         List<OwnedVehicleView> found = lookup.byIds(List.of(5L, 8L, 5L));
 
         assertEquals(1, found.size());
         assertEquals(5L, found.getFirst().vehicle().id());
+    }
+
+    @Test
+    @DisplayName("por ids busca los dueños en una sola consulta y carga cada cuenta una vez, en el orden pedido")
+    void lookupByIdsDoesNotQueryPerVehicle() {
+        CustomerVehicle car = CustomerVehicle.restore(5L, 1L, LicensePlate.of("ABC123"), CAR,
+                VehicleText.brand("Mazda"), VehicleText.model("CX-5"), VehicleText.color("Rojo"), NOW, null);
+        CustomerVehicle moto = CustomerVehicle.restore(6L, 1L, LicensePlate.of("XYZ12A"), CAR,
+                VehicleText.brand("Yamaha"), VehicleText.model("NMAX"), VehicleText.color("Negro"), NOW, null);
+        CustomerAccount twoVehicles = CustomerAccount.restore(1L, 50L, 7L, 0, LocalDate.parse("2026-01-01"), NOW,
+                List.of(car, moto));
+        given(vehicles.findCustomerIdsOfActiveVehicles(any())).willReturn(java.util.Map.of(5L, 1L, 6L, 1L, 9L, 2L));
+        given(accounts.findById(1L)).willReturn(Optional.of(twoVehicles));
+        given(accounts.findById(2L)).willReturn(Optional.of(accountWithCar(2L, 8L, 9L)));
+
+        List<OwnedVehicleView> found = lookup.byIds(java.util.Arrays.asList(6L, null, 9L, 5L));
+
+        assertEquals(List.of(6L, 9L, 5L), found.stream().map(view -> view.vehicle().id()).toList());
+        assertEquals(List.of(7L, 8L, 7L), found.stream().map(OwnedVehicleView::ownerUserId).toList());
+        verify(vehicles).findCustomerIdsOfActiveVehicles(java.util.Set.of(6L, 9L, 5L));
+        verify(accounts, org.mockito.Mockito.times(1)).findById(1L);
+        verify(vehicles, never()).findCustomerIdOfActiveVehicle(org.mockito.ArgumentMatchers.anyLong());
     }
 
     // ------------------------------------------------------------------ F-05: placa duplicada
