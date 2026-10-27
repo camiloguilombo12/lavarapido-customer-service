@@ -172,7 +172,7 @@ solo verifica que el mapeo coincida con la base, nunca la modifica.
 ### Pruebas
 
 ```bash
-./mvnw test        # 82 pruebas (24-10-2026), sin base de datos: dominio, política, listener, clientes REST y API web
+./mvnw test        # 83 pruebas (27-10-2026), sin base de datos: dominio, política, listener, clientes REST y API web
 ```
 
 ## Variables de entorno

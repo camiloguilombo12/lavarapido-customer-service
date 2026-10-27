@@ -2,6 +2,8 @@ package com.lavarapido.customer.domain.port.out;
 
 import com.lavarapido.customer.domain.model.LicensePlate;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -21,4 +23,10 @@ public interface CustomerVehicleRepository {
 
     /** customer_id del dueño de un vehiculo activo; vacio si no existe o esta borrado. */
     Optional<Long> findCustomerIdOfActiveVehicle(long vehicleId);
+
+    /**
+     * customer_id del dueño de cada vehiculo activo de la lista, en una sola consulta (la lista del
+     * administrador pide hasta 100). Los que no existen o estan borrados no aparecen.
+     */
+    Map<Long, Long> findCustomerIdsOfActiveVehicles(Collection<Long> vehicleIds);
 }
