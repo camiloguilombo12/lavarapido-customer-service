@@ -10,8 +10,11 @@ import com.lavarapido.customer.infrastructure.adapter.out.persistence.repository
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Traduce filas de customer_vehicle a objetos del dominio y al reves.
@@ -49,6 +52,17 @@ class CustomerVehiclePersistenceAdapter implements CustomerVehicleRepository {
         return repository.findById(vehicleId)
                 .filter(vehicle -> vehicle.getDeletedAt() == null)
                 .map(CustomerVehicleJpaEntity::getCustomerId);
+    }
+
+    @Override
+    public Map<Long, Long> findCustomerIdsOfActiveVehicles(Collection<Long> vehicleIds) {
+        if (vehicleIds.isEmpty()) {
+            return Map.of();
+        }
+        // findAllById es un solo SELECT con IN
+        return repository.findAllById(vehicleIds).stream()
+                .filter(vehicle -> vehicle.getDeletedAt() == null)
+                .collect(Collectors.toMap(CustomerVehicleJpaEntity::getId, CustomerVehicleJpaEntity::getCustomerId));
     }
 
     /**
